@@ -32,6 +32,8 @@
 
     <!-- Example General settings -->
     <string name="pref_header_general">General</string>
+    <string name="pref_header_general_sound">Sound</string>
+    <string name="pref_header_general_func">Functions</string>
 
     <string name="pref_title_social_recommendations">Enable social recommendations</string>
     <string name="pref_description_social_recommendations">Recommendations for people to contact
@@ -49,6 +51,12 @@
 
     <string name="pref_title_display_app_reader_switch">Voice Responses</string>
     <string name="pref_summary_display_app_reader_switch">display App Reader switch on main screen</string>
+
+    <string name="pref_title_app_overlay_switch">Overlay Button</string>
+    <string name="pref_summary_app_overlay_switch">display Overlay Button on Home Screen</string>
+
+    <string name="pref_title_app_repeat_switch">Command Responses</string>
+    <string name="pref_summary_app_repeat_switch">enable TTS for detected utterance</string>
 
     <string name="pref_title_add_friends_to_messages">Add friends to messages</string>
     <string-array name="pref_example_list_titles">
@@ -108,6 +116,7 @@
     <string name="pref_header_notifications">Notifications</string>
 
     <string name="pref_title_new_message_notifications">New message notifications</string>
+    <string name="notifications_new_message_ringtone">KEY_RINGTONE_PREFERENCE</string>
 
     <string name="pref_title_ringtone">Ringtone</string>
     <string name="pref_ringtone_silent">Silent</string>
@@ -116,7 +125,7 @@
 
     <string name="speech_prompt">Say something to Mycroft&#8230;</string>
     <string name="send_utterance">Send utterance</string>
-    <string name="speech_not_supported">Sorry! Your device doesn\'t support speech input</string>
+    <string name="speech_not_supported">Sorry! Your device does not support speech input</string>
     <string name="websocket_connected">Connected to Mycroft!</string>
     <string name="websocket_closed">Connection to Mycroft has closed! Please re-connect and check connection settings!</string>
     <string name="websocket_error">Connection error! Please ensure Ezra is available and on the same network as your device!</string>

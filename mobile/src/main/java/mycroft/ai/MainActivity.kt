@@ -24,41 +24,36 @@ import android.app.Activity
 import android.content.*
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
-import android.preference.PreferenceManager
+import androidx.preference.PreferenceManager
+import android.provider.Settings
 import android.speech.RecognizerIntent
-import android.support.v4.content.LocalBroadcastManager
-import android.support.v7.app.AppCompatActivity
-import android.support.v7.widget.LinearLayoutManager
 import android.util.Log
 import android.view.Menu
 import android.view.MenuItem
 import android.view.View
-
+import androidx.appcompat.app.AppCompatActivity
 import com.crashlytics.android.Crashlytics
-
-import org.java_websocket.client.WebSocketClient
-import org.java_websocket.exceptions.WebsocketNotConnectedException
-import org.java_websocket.handshake.ServerHandshake
-
-import java.net.URI
-import java.net.URISyntaxException
-import java.util.Locale
-
 import io.fabric.sdk.android.Fabric
 import kotlinx.android.synthetic.main.activity_main.*
 import kotlinx.android.synthetic.main.content_main.*
+import mycroft.ai.Constants.MycroftMobileConstants.VERSION_CODE_PREFERENCE_KEY
+import mycroft.ai.Constants.MycroftMobileConstants.VERSION_NAME_PREFERENCE_KEY
 import mycroft.ai.adapters.MycroftAdapter
 import mycroft.ai.receivers.NetworkChangeReceiver
 import mycroft.ai.shared.utilities.GuiUtilities
-import mycroft.ai.utils.NetworkUtil
-
-import mycroft.ai.Constants.MycroftMobileConstants.VERSION_CODE_PREFERENCE_KEY
-import mycroft.ai.Constants.MycroftMobileConstants.VERSION_NAME_PREFERENCE_KEY
 import mycroft.ai.shared.wear.Constants.MycroftSharedConstants.MYCROFT_WEAR_REQUEST
 import mycroft.ai.shared.wear.Constants.MycroftSharedConstants.MYCROFT_WEAR_REQUEST_KEY_NAME
 import mycroft.ai.shared.wear.Constants.MycroftSharedConstants.MYCROFT_WEAR_REQUEST_MESSAGE
+import mycroft.ai.utils.NetworkUtil
+import org.java_websocket.client.WebSocketClient
+import org.java_websocket.exceptions.WebsocketNotConnectedException
+import org.java_websocket.handshake.ServerHandshake
+import java.net.URI
+import java.net.URISyntaxException
+import java.util.*
 
 class MainActivity : AppCompatActivity() {
     private val logTag = "Mycroft"
@@ -66,6 +61,7 @@ class MainActivity : AppCompatActivity() {
     private val reqCodeSpeechInput = 100
     private var maximumRetries = 1
     private var currentItemPosition = -1
+
 
     private var isNetworkChangeReceiverRegistered = false
     private var isWearBroadcastRevieverRegistered = false
@@ -126,8 +122,6 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        registerForContextMenu(cardList)
-
         //attach a listener to check for changes in state
         voxswitch.setOnCheckedChangeListener { _, isChecked ->
             val editor = sharedPref.edit()
@@ -138,20 +132,73 @@ class MainActivity : AppCompatActivity() {
             if (!isChecked) ttsManager.initQueue("")
         }
 
-        val llm = LinearLayoutManager(this)
+        registerForContextMenu(cardList)
+
+        val llm = androidx.recyclerview.widget.LinearLayoutManager(this)
         llm.stackFromEnd = true
-        llm.orientation = LinearLayoutManager.VERTICAL
+        llm.orientation = androidx.recyclerview.widget.LinearLayoutManager.VERTICAL
         with (cardList) {
             setHasFixedSize(true)
             layoutManager = llm
             adapter = mycroftAdapter
         }
 
-        registerReceivers()
-
         // start the discovery activity (testing only)
         // startActivity(new Intent(this, DiscoveryActivity.class));
     }
+
+    public override fun onStart() {
+        super.onStart()
+        recordVersionInfo()
+        registerReceivers()
+        checkIfLaunchedFromWidget(intent)
+    }
+
+    public override fun onResume() {
+        super.onResume()
+
+        voxswitch.isChecked = sharedPref.getBoolean("appReaderSwitch", true)
+
+        if (serviceRunning) stopFloatingWidget()
+        serviceRunning = sharedPref.getBoolean("overlaySwitch", false)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+    }
+
+    override fun onPause() {
+        super.onPause()
+        unregisterReceivers()
+    }
+
+    public override fun onStop() {
+        super.onStop()
+
+        if (launchedFromWidget) {
+            autoPromptForSpeech = true
+        }
+
+        if (sharedPref.getBoolean("overlaySwitch", false)) startFloatingWidget()
+    }
+
+    public override fun onDestroy() {
+        ttsManager.shutDown()
+        isNetworkChangeReceiverRegistered = false
+        isWearBroadcastRevieverRegistered = false
+        super.onDestroy()
+    }
+
+    companion object {
+        var serviceRunning = false
+    }
+
+    /**
+    *
+    * END Android Lifecycle, START ActionMenu
+    *
+    */
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
         // Inflate the menu; this adds items to the action bar if it is present.
@@ -186,9 +233,9 @@ class MainActivity : AppCompatActivity() {
             sendMessage(utterances[currentItemPosition].utterance)
         } else if (item.itemId == R.id.user_copy || item.itemId == R.id.mycroft_copy) {
             // Copy utterance to clipboard
-            val clipboardManager = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            val clipboardManager = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager?
             val data = ClipData.newPlainText("text", utterances[currentItemPosition].utterance)
-            clipboardManager.primaryClip = data
+            clipboardManager?.setPrimaryClip(data)
             showToast("Copied to clipboard")
         } else if (item.itemId == R.id.mycroft_share) {
             // Share utterance
@@ -205,6 +252,98 @@ class MainActivity : AppCompatActivity() {
         return true
     }
 
+    /**
+    *
+    * END ActionMenu, START Background System ChangeListener
+    *
+    */
+    private fun registerReceivers() {
+        registerNetworkReceiver()
+        registerWearBroadcastReceiver()
+    }
+
+    private fun registerNetworkReceiver() {
+        if (!isNetworkChangeReceiverRegistered) {
+            // set up the dynamic broadcast receiver for maintaining the socket
+            networkChangeReceiver = NetworkChangeReceiver(this)
+
+            // set up the intent filters
+            val connChange = IntentFilter("android.net.conn.CONNECTIVITY_CHANGE")
+            val wifiChange = IntentFilter("android.net.wifi.WIFI_STATE_CHANGED")
+            registerReceiver(networkChangeReceiver, connChange)
+            registerReceiver(networkChangeReceiver, wifiChange)
+
+            isNetworkChangeReceiverRegistered = true
+        }
+    }
+
+    private fun registerWearBroadcastReceiver() {
+        if (!isWearBroadcastRevieverRegistered) {
+            wearBroadcastReceiver = object : BroadcastReceiver() {
+                override fun onReceive(context: Context, intent: Intent) {
+                    val message = intent.getStringExtra(MYCROFT_WEAR_REQUEST_MESSAGE)
+                    // send to mycroft
+                    if (message != null) {
+                        Log.d(logTag, "Wear message received: [$message] sending to Mycroft")
+                        sendMessage(message)
+                    }
+                }
+            }
+
+            registerReceiver(wearBroadcastReceiver, IntentFilter(MYCROFT_WEAR_REQUEST))
+            isWearBroadcastRevieverRegistered = true
+        }
+    }
+
+    private fun unregisterReceivers() {
+        if (isNetworkChangeReceiverRegistered) {
+            unregisterBroadcastReceiver(networkChangeReceiver)
+            isNetworkChangeReceiverRegistered = false
+        }
+
+        if (isWearBroadcastRevieverRegistered) {
+            isWearBroadcastRevieverRegistered = false
+            unregisterBroadcastReceiver(wearBroadcastReceiver)
+        }
+    }
+
+    private fun unregisterBroadcastReceiver(broadcastReceiver: BroadcastReceiver) {
+        unregisterReceiver(broadcastReceiver)
+    }
+
+
+    /**
+     *
+     * END Background System ChangeListener, START Connection to MycroftCore
+     *
+     * This method will attach the correct path to the
+     * [.wsip] hostname to allow for communication
+     * with a Mycroft instance at that address.
+     *
+     *
+     * If [.wsip] cannot be used as a hostname
+     * in a [URI] (e.g. because it's null), then
+     * this method will return null.
+     *
+     *
+     * @return a valid uri, or null
+     */
+    private fun deriveURI(): URI? {
+        return if (wsip.isNotEmpty()) {
+            try {
+                URI("ws://$wsip:8181/core")
+            } catch (e: URISyntaxException) {
+                Log.e(logTag, "Unable to build URI for websocket", e)
+                null
+            }
+        } else {
+            null
+        }
+    }
+
+    /**
+     * Build connection to MycroftCore WebInstance
+     */
     fun connectWebSocket() {
         val uri = deriveURI()
 
@@ -236,92 +375,9 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun addData(mycroftUtterance: Utterance) {
-        utterances.add(mycroftUtterance)
-        mycroftAdapter.notifyItemInserted(utterances.size - 1)
-        if (voxswitch.isChecked) {
-            ttsManager.addQueue(mycroftUtterance.utterance)
-        }
-        cardList.smoothScrollToPosition(mycroftAdapter.itemCount - 1)
-    }
-
-    private fun registerReceivers() {
-        registerNetworkReceiver()
-        registerWearBroadcastReceiver()
-    }
-
-    private fun registerNetworkReceiver() {
-        if (!isNetworkChangeReceiverRegistered) {
-            // set up the dynamic broadcast receiver for maintaining the socket
-            networkChangeReceiver = NetworkChangeReceiver()
-            networkChangeReceiver.setMainActivityHandler(this)
-
-            // set up the intent filters
-            val connChange = IntentFilter("android.net.conn.CONNECTIVITY_CHANGE")
-            val wifiChange = IntentFilter("android.net.wifi.WIFI_STATE_CHANGED")
-            registerReceiver(networkChangeReceiver, connChange)
-            registerReceiver(networkChangeReceiver, wifiChange)
-
-            isNetworkChangeReceiverRegistered = true
-        }
-    }
-
-    private fun registerWearBroadcastReceiver() {
-        if (!isWearBroadcastRevieverRegistered) {
-            wearBroadcastReceiver = object : BroadcastReceiver() {
-                override fun onReceive(context: Context, intent: Intent) {
-                    val message = intent.getStringExtra(MYCROFT_WEAR_REQUEST_MESSAGE)
-                    // send to mycroft
-                    if (message != null) {
-                        Log.d(logTag, "Wear message received: [$message] sending to Mycroft")
-                        sendMessage(message)
-                    }
-                }
-            }
-
-            LocalBroadcastManager.getInstance(this).registerReceiver(wearBroadcastReceiver, IntentFilter(MYCROFT_WEAR_REQUEST))
-            isWearBroadcastRevieverRegistered = true
-        }
-    }
-
-    private fun unregisterReceivers() {
-        unregisterBroadcastReceiver(networkChangeReceiver)
-        unregisterBroadcastReceiver(wearBroadcastReceiver)
-
-        isNetworkChangeReceiverRegistered = false
-        isWearBroadcastRevieverRegistered = false
-    }
-
-    private fun unregisterBroadcastReceiver(broadcastReceiver: BroadcastReceiver) {
-        LocalBroadcastManager.getInstance(this).unregisterReceiver(broadcastReceiver)
-    }
-
     /**
-     * This method will attach the correct path to the
-     * [.wsip] hostname to allow for communication
-     * with a Mycroft instance at that address.
-     *
-     *
-     * If [.wsip] cannot be used as a hostname
-     * in a [URI] (e.g. because it's null), then
-     * this method will return null.
-     *
-     *
-     * @return a valid uri, or null
+     * Send to MycroftCore WebInstance
      */
-    private fun deriveURI(): URI? {
-        return if (wsip.isNotEmpty()) {
-            try {
-                URI("ws://$wsip:8181/core")
-            } catch (e: URISyntaxException) {
-                Log.e(logTag, "Unable to build URI for websocket", e)
-                null
-            }
-        } else {
-            null
-        }
-    }
-
     fun sendMessage(msg: String) {
         // let's keep it simple eh?
         //final String json = "{\"message_type\":\"recognizer_loop:utterance\", \"context\": null, \"metadata\": {\"utterances\": [\"" + msg + "\"]}}";
@@ -353,6 +409,24 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
+     * Receive MycroftCore WebInstance
+     */
+    private fun addData(mycroftUtterance: Utterance) {
+        Log.w(logTag, mycroftUtterance.from.toString() + " " + sharedPref.getBoolean("repeatSwitch", false).toString())
+        utterances.add(mycroftUtterance)
+        mycroftAdapter.notifyItemInserted(utterances.size - 1)
+
+        // TURN OFF SELF SPOKEN SETTING
+        if (voxswitch.isChecked && (mycroftUtterance.from !== UtteranceFrom.USER || sharedPref.getBoolean("repeatSwitch", false))) {
+
+            ttsManager.addQueue(mycroftUtterance.utterance)
+        }
+        cardList.smoothScrollToPosition(mycroftAdapter.itemCount - 1)
+    }
+
+    /**
+     *
+     * END Connection to MycroftCore, START SpeechRecognition
      * Showing google speech input dialog
      */
     private fun promptSpeechInput() {
@@ -389,40 +463,38 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    public override fun onDestroy() {
-        super.onDestroy()
-        ttsManager.shutDown()
-        isNetworkChangeReceiverRegistered = false
-        isWearBroadcastRevieverRegistered = false
+    /**
+     *
+     * END SpeechRecognition, START MainActivityFunctions
+     *
+     */
+
+    private fun showToast(message: String) {
+        GuiUtilities.showToast(applicationContext, message)
     }
 
-    public override fun onStart() {
-        super.onStart()
-        recordVersionInfo()
-        registerReceivers()
-        checkIfLaunchedFromWidget(intent)
-    }
 
-    public override fun onStop() {
-        super.onStop()
+    private fun recordVersionInfo() {
+        try {
+            val packageInfo = packageManager.getPackageInfo(packageName, 0)
+            val editor = sharedPref.edit()
+            val versionCode: Int = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                packageInfo.longVersionCode.toInt()
+            } else packageInfo.versionCode
 
-        unregisterReceivers()
-
-        if (launchedFromWidget) {
-            autoPromptForSpeech = true
+            editor.putInt(VERSION_CODE_PREFERENCE_KEY, versionCode)
+            editor.putString(VERSION_NAME_PREFERENCE_KEY, packageInfo.versionName)
+            editor.apply()
+        } catch (e: PackageManager.NameNotFoundException) {
+            Log.e(logTag, "Couldn't find package info", e)
         }
-    }
-
-    override fun onNewIntent(intent: Intent) {
-        super.onNewIntent(intent)
-        setIntent(intent)
     }
 
     private fun loadPreferences() {
         sharedPref = PreferenceManager.getDefaultSharedPreferences(this)
 
         // get mycroft-core ip address
-        wsip = sharedPref.getString("ip", "")
+        wsip = sharedPref.getString("ip", "")?: ""
         if (wsip.isEmpty()) {
             // eep, show the settings intent!
             startActivity(Intent(this, SettingsActivity::class.java))
@@ -446,20 +518,24 @@ class MainActivity : AppCompatActivity() {
         // set app reader setting
         voxswitch.isChecked = sharedPref.getBoolean("appReaderSwitch", true)
 
-        maximumRetries = Integer.parseInt(sharedPref.getString("maximumRetries", "1"))
+        maximumRetries = Integer.parseInt(sharedPref.getString("maximumRetries", "1")?: "1")
     }
 
     private fun checkIfLaunchedFromWidget(intent: Intent) {
         val extras = getIntent().extras
         if (extras != null) {
+            for (key in extras.keySet()) {
+                Log.i(logTag, key + " : " + if (extras.get(key) != null) extras.get(key) else "NULL")
+            }
+
             if (extras.containsKey("launchedFromWidget")) {
                 launchedFromWidget = extras.getBoolean("launchedFromWidget")
                 autoPromptForSpeech = extras.getBoolean("autoPromptForSpeech")
             }
 
             if (extras.containsKey(MYCROFT_WEAR_REQUEST_KEY_NAME)) {
-                Log.d(logTag, "checkIfLaunchedFromWidget - extras contain key:$MYCROFT_WEAR_REQUEST_KEY_NAME")
-                sendMessage(extras.getString(MYCROFT_WEAR_REQUEST_KEY_NAME))
+                Log.i(logTag, "checkIfLaunchedFromWidget - extras contain key:$MYCROFT_WEAR_REQUEST_KEY_NAME")
+                sendMessage(extras.getString(MYCROFT_WEAR_REQUEST_KEY_NAME)?: "")
                 getIntent().removeExtra(MYCROFT_WEAR_REQUEST_KEY_NAME)
             }
         }
@@ -470,19 +546,15 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun recordVersionInfo() {
-        try {
-            val packageInfo = packageManager.getPackageInfo(packageName, 0)
-            val editor = sharedPref.edit()
-            editor.putInt(VERSION_CODE_PREFERENCE_KEY, packageInfo.versionCode)
-            editor.putString(VERSION_NAME_PREFERENCE_KEY, packageInfo.versionName)
-            editor.apply()
-        } catch (e: PackageManager.NameNotFoundException) {
-            Log.e(logTag, "Couldn't find package info", e)
+    private fun startFloatingWidget() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(this)) {
+            serviceRunning = true
+            startService(Intent(this@MainActivity, FloatingWidgetService::class.java))
         }
     }
 
-    private fun showToast(message: String) {
-        GuiUtilities.showToast(applicationContext, message)
+    private fun stopFloatingWidget() {
+        serviceRunning = false
+        stopService(Intent(this@MainActivity, FloatingWidgetService::class.java))
     }
 }

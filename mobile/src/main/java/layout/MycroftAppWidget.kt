@@ -62,7 +62,7 @@ class MycroftAppWidget : AppWidgetProvider() {
             // Create an Intent to launch MainActivity
             val intent = Intent(context, MainActivity::class.java)
             intent.putExtra("launchedFromWidget", true)
-            intent.putExtra("autopromptForSpeech", true)
+            intent.putExtra("autoPromptForSpeech", true)
             val pendingIntent = PendingIntent.getActivity(context, appWidgetId, intent, PendingIntent.FLAG_UPDATE_CURRENT)
 
             // Construct the RemoteViews object

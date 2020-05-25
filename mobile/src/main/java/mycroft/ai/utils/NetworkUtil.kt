@@ -22,6 +22,8 @@ package mycroft.ai.utils
 
 import android.content.Context
 import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
+import android.os.Build
 
 /**
  * Created by paul on 2016/06/22.
@@ -37,15 +39,28 @@ object NetworkUtil {
     private var NETWORK_STATUS_MOBILE = 2
 
     fun getConnectivityStatus(context: Context): Int {
+
         val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
 
-        val activeNetwork = cm.activeNetworkInfo
-        if (null != activeNetwork) {
-            if (activeNetwork.type == ConnectivityManager.TYPE_WIFI)
-                return TYPE_WIFI
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+            val activeNetwork = cm.activeNetworkInfo
+            if (null != activeNetwork) {
+                if (activeNetwork.type == ConnectivityManager.TYPE_WIFI)
+                    return TYPE_WIFI
 
-            if (activeNetwork.type == ConnectivityManager.TYPE_MOBILE)
-                return TYPE_MOBILE
+                if (activeNetwork.type == ConnectivityManager.TYPE_MOBILE)
+                    return TYPE_MOBILE
+            }
+        } else {
+            val activeNetwork = cm.activeNetwork
+            if (null != activeNetwork) {
+                val activeNetworkAble = cm.getNetworkCapabilities(activeNetwork)
+                if (activeNetworkAble.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) || activeNetworkAble.hasTransport(NetworkCapabilities.TRANSPORT_VPN))
+                    return TYPE_WIFI
+
+                if (activeNetworkAble.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR))
+                    return TYPE_MOBILE
+            }
         }
         return TYPE_NOT_CONNECTED
     }
@@ -54,12 +69,16 @@ object NetworkUtil {
         val conn = NetworkUtil.getConnectivityStatus(context)
         var status = 0
 
-        if (conn == NetworkUtil.TYPE_WIFI) {
-            status = NETWORK_STATUS_WIFI
-        } else if (conn == NetworkUtil.TYPE_MOBILE) {
-            status = NETWORK_STATUS_MOBILE
-        } else if (conn == NetworkUtil.TYPE_NOT_CONNECTED) {
-            status = NETWORK_STATUS_NOT_CONNECTED
+        when (conn) {
+            NetworkUtil.TYPE_WIFI -> {
+                status = NETWORK_STATUS_WIFI
+            }
+            NetworkUtil.TYPE_MOBILE -> {
+                status = NETWORK_STATUS_MOBILE
+            }
+            NetworkUtil.TYPE_NOT_CONNECTED -> {
+                status = NETWORK_STATUS_NOT_CONNECTED
+            }
         }
         return status
     }

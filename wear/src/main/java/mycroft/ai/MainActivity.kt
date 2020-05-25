@@ -43,7 +43,7 @@ import mycroft.ai.shared.utilities.GuiUtilities
 import mycroft.ai.shared.wear.Constants.MycroftSharedConstants.MYCROFT_QUERY_MESSAGE_PATH
 
 class MainActivity : WearableActivity(), GoogleApiClient.ConnectionCallbacks, GoogleApiClient.OnConnectionFailedListener {
-    private val REQ_CODE_SPEECH_INPUT = 100
+    private val reqCodeSpeechInput = 100
 
     private var containerView: BoxInsetLayout? = null
     private var inputImageButton: ImageButton? = null
@@ -62,9 +62,9 @@ class MainActivity : WearableActivity(), GoogleApiClient.ConnectionCallbacks, Go
                 .addOnConnectionFailedListener(this)
                 .build()
 
-        containerView = findViewById(R.id.container) as BoxInsetLayout
+        containerView = findViewById(R.id.container)
 
-        inputImageButton = findViewById(R.id.inputImageButton) as ImageButton
+        inputImageButton = findViewById(R.id.inputImageButton)
         inputImageButton!!.setOnClickListener {
             try {
                 promptSpeechInput()
@@ -108,7 +108,7 @@ class MainActivity : WearableActivity(), GoogleApiClient.ConnectionCallbacks, Go
         intent.putExtra(RecognizerIntent.EXTRA_PROMPT,
                 getString(R.string.speech_prompt))
         try {
-            startActivityForResult(intent, REQ_CODE_SPEECH_INPUT)
+            startActivityForResult(intent, reqCodeSpeechInput)
         } catch (a: ActivityNotFoundException) {
             Toast.makeText(applicationContext,
                     getString(R.string.speech_not_supported),
@@ -124,7 +124,7 @@ class MainActivity : WearableActivity(), GoogleApiClient.ConnectionCallbacks, Go
         super.onActivityResult(requestCode, resultCode, data)
 
         when (requestCode) {
-            REQ_CODE_SPEECH_INPUT -> {
+            reqCodeSpeechInput -> {
                 if (resultCode == Activity.RESULT_OK && null != data) {
 
                     val result = data
@@ -169,7 +169,7 @@ class MainActivity : WearableActivity(), GoogleApiClient.ConnectionCallbacks, Go
         mGoogleApiClient!!.disconnect()
     }
 
-    fun sendMessage(message: String) {
+    private fun sendMessage(message: String) {
         if (mNode != null && mGoogleApiClient != null) {
             Wearable.MessageApi.sendMessage(mGoogleApiClient, mNode!!.id, MYCROFT_QUERY_MESSAGE_PATH, message.toByteArray()).setResultCallback { sendMessageResult ->
                 if (!sendMessageResult.status.isSuccess) {
@@ -189,6 +189,6 @@ class MainActivity : WearableActivity(), GoogleApiClient.ConnectionCallbacks, Go
 
     companion object {
 
-        private val WEARABLE_MAIN = "WearableMain"
+        private const val WEARABLE_MAIN = "WearableMain"
     }
 }

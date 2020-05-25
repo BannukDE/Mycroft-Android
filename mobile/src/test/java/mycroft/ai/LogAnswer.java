@@ -24,7 +24,7 @@ import org.mockito.invocation.InvocationOnMock;
 import org.mockito.stubbing.Answer;
 
 import java.io.PrintStream;
-import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.Locale;
 
 /**
@@ -56,6 +56,6 @@ public class LogAnswer implements Answer<Integer> {
 		String format = String.format(Locale.US, "[Log.%s] %s: %s", name, tag, msg);
 		stream.println(format);
 
-		return format.getBytes(Charset.forName("UTF8")).length;
+		return format.getBytes(StandardCharsets.UTF_8).length;
 	}
 }

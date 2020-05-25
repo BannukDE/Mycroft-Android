@@ -38,13 +38,13 @@ import mycroft.ai.utils.NetworkUtil
  * @see .setMainActivityHandler
  * @author Paul Scott
  */
-class NetworkChangeReceiver : BroadcastReceiver() {
+class NetworkChangeReceiver (main: MainActivity?) : BroadcastReceiver() {
 
-    private var main: MainActivity? = null
-
+    private val main: MainActivity? = main
+/*
     fun setMainActivityHandler(main: MainActivity?) {
         this.main = main
-    }
+    }*/
 
     override fun onReceive(context: Context, intent: Intent) {
         val status = NetworkUtil.getConnectivityStatusString(context)
@@ -53,8 +53,8 @@ class NetworkChangeReceiver : BroadcastReceiver() {
                 // do something about it.. IDK
             } else if (main != null) {
                 // reconnect websocket
-                if (main!!.webSocketClient == null || main!!.webSocketClient!!.connection.isClosed) {
-                    main!!.connectWebSocket()
+                if (main.webSocketClient == null || main.webSocketClient!!.connection.isClosed) {
+                    main.connectWebSocket()
                 }
             }
         }
