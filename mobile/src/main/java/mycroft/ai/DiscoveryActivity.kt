@@ -34,10 +34,9 @@ import android.net.nsd.NsdServiceInfo
 import android.annotation.SuppressLint
 import android.app.Activity
 
-@SuppressLint("NewApi")
 class DiscoveryActivity : Activity() {
 
-    internal lateinit var mDiscoveryListener: DiscoveryListener
+    private lateinit var mDiscoveryListener: DiscoveryListener
 
     internal var mServiceName: String? = null
     internal var mServiceInfo: NsdServiceInfo? = null
@@ -63,7 +62,7 @@ class DiscoveryActivity : Activity() {
 
     }
 
-    fun initializeDiscoveryListener() {
+    private fun initializeDiscoveryListener() {
 
         // Instantiate a new DiscoveryListener
         mDiscoveryListener = object : NsdManager.DiscoveryListener {

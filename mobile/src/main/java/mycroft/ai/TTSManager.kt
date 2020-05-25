@@ -23,6 +23,7 @@ package mycroft.ai
 import android.app.Activity
 import android.app.Service
 import android.content.Context
+import android.os.Build
 import android.speech.tts.TextToSpeech
 import android.util.Log
 
@@ -105,16 +106,18 @@ class TTSManager {
     }
 
     fun addQueue(text: String) {
-        if (isLoaded)
+        if (isLoaded && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP)
+            mTts.speak(text, TextToSpeech.QUEUE_ADD, null, null)
+        else if (isLoaded)
             mTts.speak(text, TextToSpeech.QUEUE_ADD, null)
-        else {
+        else
             logError("TTS Not Initialized")
-        }
     }
 
     fun initQueue(text: String) {
-
-        if (isLoaded)
+        if (isLoaded && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP)
+            mTts.speak(text, TextToSpeech.QUEUE_FLUSH, null, null)
+        else if (isLoaded)
             mTts.speak(text, TextToSpeech.QUEUE_FLUSH, null)
         else
             logError("TTS Not Initialized")
@@ -139,6 +142,6 @@ class TTSManager {
 
     companion object {
 
-        private val TAG = "TTSManager"
+        private const val TAG = "TTSManager"
     }
 }

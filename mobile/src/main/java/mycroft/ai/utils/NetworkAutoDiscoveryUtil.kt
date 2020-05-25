@@ -28,7 +28,7 @@ import android.util.Log
 /**
  * Created by paul on 2016/06/28.
  */
-class NetworkAutoDiscoveryUtil(internal var mContext: Context) {
+class NetworkAutoDiscoveryUtil(private var mContext: Context) {
     private var mServiceName = "MycroftAI Websocket"
     private var chosenServiceInfo: NsdServiceInfo? = null
     private var mNsdManager: NsdManager = mContext.getSystemService(Context.NSD_SERVICE) as NsdManager
@@ -45,7 +45,7 @@ class NetworkAutoDiscoveryUtil(internal var mContext: Context) {
         //mNsdManager.init(mContext.getMainLooper(), this);
     }
 
-    fun initializeDiscoveryListener() {
+    private fun initializeDiscoveryListener() {
         mDiscoveryListener = object : NsdManager.DiscoveryListener {
             override fun onDiscoveryStarted(regType: String) {
                 Log.d(TAG, "Service discovery started")
@@ -53,12 +53,16 @@ class NetworkAutoDiscoveryUtil(internal var mContext: Context) {
 
             override fun onServiceFound(service: NsdServiceInfo) {
                 Log.d(TAG, "Service discovery success$service")
-                if (service.serviceType != SERVICE_TYPE) {
-                    Log.d(TAG, "Unknown Service Type: " + service.serviceType)
-                } else if (service.serviceName == mServiceName) {
-                    Log.d(TAG, "Same machine: $mServiceName")
-                } else if (service.serviceName.contains(mServiceName)) {
-                    mNsdManager.resolveService(service, mResolveListener)
+                when {
+                    service.serviceType != SERVICE_TYPE -> {
+                        Log.d(TAG, "Unknown Service Type: " + service.serviceType)
+                    }
+                    service.serviceName == mServiceName -> {
+                        Log.d(TAG, "Same machine: $mServiceName")
+                    }
+                    service.serviceName.contains(mServiceName) -> {
+                        mNsdManager.resolveService(service, mResolveListener)
+                    }
                 }
             }
 
@@ -83,7 +87,7 @@ class NetworkAutoDiscoveryUtil(internal var mContext: Context) {
         }
     }
 
-    fun initializeResolveListener() {
+    private fun initializeResolveListener() {
         mResolveListener = object : NsdManager.ResolveListener {
             override fun onResolveFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
                 Log.e(TAG, "Resolve failed$errorCode")
@@ -100,7 +104,7 @@ class NetworkAutoDiscoveryUtil(internal var mContext: Context) {
         }
     }
 
-    fun initializeRegistrationListener() {
+    private fun initializeRegistrationListener() {
         mRegistrationListener = object : NsdManager.RegistrationListener {
             override fun onServiceRegistered(NsdServiceInfo: NsdServiceInfo) {
                 mServiceName = NsdServiceInfo.serviceName
@@ -139,7 +143,7 @@ class NetworkAutoDiscoveryUtil(internal var mContext: Context) {
                 SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, mDiscoveryListener)
     }
 
-    fun stopDiscovery() {
+    private fun stopDiscovery() {
         if (mDiscoveryListener != null) {
             try {
                 mNsdManager.stopServiceDiscovery(mDiscoveryListener)
@@ -149,7 +153,7 @@ class NetworkAutoDiscoveryUtil(internal var mContext: Context) {
         }
     }
 
-    fun tearDown() {
+    private fun tearDown() {
         if (mRegistrationListener != null) {
             try {
                 mNsdManager.unregisterService(mRegistrationListener)
@@ -161,7 +165,7 @@ class NetworkAutoDiscoveryUtil(internal var mContext: Context) {
 
     companion object {
 
-        private val TAG = "NetworkDiscovery"
-        private val SERVICE_TYPE = " _mycroft._tcp"
+        private const val TAG = "NetworkDiscovery"
+        private const val SERVICE_TYPE = " _mycroft._tcp"
     }
 }

@@ -21,7 +21,7 @@
 package mycroft.ai.adapters
 
 import android.content.Context
-import android.support.v7.widget.RecyclerView
+import androidx.recyclerview.widget.RecyclerView
 import android.view.*
 import android.widget.AdapterView
 import android.widget.Toast
@@ -34,8 +34,8 @@ import mycroft.ai.UtteranceFrom
 /**
  * Created by paul on 2016/06/22.
  */
-class MycroftAdapter(private val utteranceList: List<Utterance>, private val ctx: Context, private val menuInflater: MenuInflater) : RecyclerView.Adapter<MycroftAdapter.UtteranceViewHolder>() {
-    var onLongClickListener: OnLongItemClickListener? = null
+class MycroftAdapter(private val utteranceList: List<Utterance>, private val ctx: Context, private val menuInflater: MenuInflater) : androidx.recyclerview.widget.RecyclerView.Adapter<MycroftAdapter.UtteranceViewHolder>() {
+    private var onLongClickListener: OnLongItemClickListener? = null
 
     interface OnLongItemClickListener {
         fun itemLongClicked(v: View, position: Int)
@@ -72,7 +72,7 @@ class MycroftAdapter(private val utteranceList: List<Utterance>, private val ctx
         return message.from.id
     }
 
-    class UtteranceViewHolder(v: View, private val menuInflater: MenuInflater, private val i: Int) : RecyclerView.ViewHolder(v), View.OnCreateContextMenuListener {
+    class UtteranceViewHolder(v: View, private val menuInflater: MenuInflater, private val i: Int) : androidx.recyclerview.widget.RecyclerView.ViewHolder(v), View.OnCreateContextMenuListener {
         val vUtterance = v.utterance
 
         init {

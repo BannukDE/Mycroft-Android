@@ -22,7 +22,7 @@ package mycroft.ai.services
 
 import android.app.Service
 import android.content.Intent
-import android.support.v4.content.LocalBroadcastManager
+import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import android.util.Log
 
 import com.google.android.gms.wearable.MessageEvent
@@ -40,14 +40,14 @@ import mycroft.ai.shared.wear.Constants.MycroftSharedConstants.MYCROFT_WEAR_REQU
  */
 class MycroftWearListenerService : WearableListenerService() {
 
-    private var localBroadcastManager: LocalBroadcastManager? = null
+    private var localBroadcastManager: androidx.localbroadcastmanager.content.LocalBroadcastManager? = null
     override fun onStartCommand(intent: Intent, flags: Int, startId: Int): Int {
         return Service.START_STICKY
     }
 
     override fun onCreate() {
         super.onCreate()
-        localBroadcastManager = LocalBroadcastManager.getInstance(this)
+        localBroadcastManager = androidx.localbroadcastmanager.content.LocalBroadcastManager.getInstance(this)
     }
 
     override fun onMessageReceived(messageEvent: MessageEvent?) {
@@ -82,7 +82,7 @@ class MycroftWearListenerService : WearableListenerService() {
 
     companion object {
 
-        private val TAG = "Mycroft"
+        private const val TAG = "Mycroft"
     }
 }
 

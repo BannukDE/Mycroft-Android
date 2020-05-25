@@ -32,10 +32,30 @@
         android:singleLine="true"
         android:title="@string/pref_title_default_ip" />
 
-    <SwitchPreference
-        android:key="appReaderSwitch"
-        android:title="@string/pref_title_app_reader_switch"
-        android:summary="@string/pref_summary_app_reader_switch"
-        android:defaultValue="true"/>
+    <PreferenceCategory android:title="@string/pref_header_general_sound">
+
+        <SwitchPreference
+            android:key="appReaderSwitch"
+            android:title="@string/pref_title_app_reader_switch"
+            android:summary="@string/pref_summary_app_reader_switch"
+            android:defaultValue="true"/>
+
+        <SwitchPreference
+            android:key="repeatSwitch"
+            android:title="@string/pref_title_app_repeat_switch"
+            android:summary="@string/pref_summary_app_repeat_switch"
+            android:defaultValue="false" />
+
+    </PreferenceCategory>
+
+    <PreferenceCategory android:title="@string/pref_header_general_func">
+
+        <SwitchPreference
+            android:key="overlaySwitch"
+            android:title="@string/pref_title_app_overlay_switch"
+            android:summary="@string/pref_summary_app_overlay_switch"
+            android:defaultValue="false" />
+
+    </PreferenceCategory>
 
 </PreferenceScreen>

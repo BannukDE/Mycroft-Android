@@ -30,7 +30,7 @@ import com.google.android.gms.common.GoogleApiAvailability
  */
 class PlayServicesUtil(private val context: Context) {
 
-    val isPsInstalled: Boolean
+    private val isPsInstalled: Boolean
 
     init {
         isPsInstalled = checkPlayServices()
@@ -51,7 +51,7 @@ class PlayServicesUtil(private val context: Context) {
 
     companion object {
 
-        private val PLAY_SERVICES_RESOLUTION_REQUEST = 9000
-        private val TAG = "PlayServicesUtil"
+        private const val PLAY_SERVICES_RESOLUTION_REQUEST = 9000
+        private const val TAG = "PlayServicesUtil"
     }
 }

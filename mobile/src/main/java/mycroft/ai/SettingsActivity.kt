@@ -20,115 +20,176 @@
 
 package mycroft.ai
 
-import android.annotation.TargetApi
-import android.content.Context
 import android.content.Intent
-import android.content.SharedPreferences
-import android.content.res.Configuration
 import android.media.RingtoneManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.preference.ListPreference
-import android.preference.Preference
-import android.preference.PreferenceActivity
-import android.support.v4.app.NavUtils
-import android.preference.PreferenceFragment
-import android.preference.PreferenceManager
 import android.preference.RingtonePreference
+import android.provider.Settings
 import android.text.TextUtils
+import android.util.Log
 import android.view.MenuItem
+import androidx.appcompat.app.AppCompatActivity
+import androidx.fragment.app.FragmentManager
+import androidx.preference.*
 import mycroft.ai.Constants.MycroftMobileConstants.VERSION_CODE_PREFERENCE_KEY
 import mycroft.ai.Constants.MycroftMobileConstants.VERSION_NAME_PREFERENCE_KEY
 
 
 /**
- * A [PreferenceActivity] that presents a set of application settings. On
- * handset devices, settings are presented as a single list. On tablets,
- * settings are split by category, with category headers shown to the left of
- * the list of settings.
- *
- *
- * See [
- * Android Design: Settings](http://developer.android.com/design/patterns/settings.html) for design guidelines and the [Settings
- * API Guide](http://developer.android.com/guide/topics/ui/settings.html) for more information on developing a Settings UI.
+ * A Activity that presents a set of application settings.
  */
-class SettingsActivity : AppCompatPreferenceActivity() {
 
-    private var sharedPreferences: SharedPreferences? = null
+class SettingsActivity : AppCompatActivity(), PreferenceFragmentCompat.OnPreferenceStartFragmentCallback {
+
+    private val backstackTag = "root_fragment"
+
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        sharedPreferences = PreferenceManager.getDefaultSharedPreferences(this)
-        setupActionBar()
-    }
 
-    override fun onOptionsItemSelected(item: MenuItem): Boolean {
-        when (item.itemId) {
-        // Respond to the action bar's Up/Home button
-            android.R.id.home -> {
-                NavUtils.navigateUpFromSameTask(this)
-                return true
-            }
+        supportFragmentManager.popBackStack(backstackTag, FragmentManager.POP_BACK_STACK_INCLUSIVE)
+
+        if (supportFragmentManager.findFragmentById(android.R.id.content) == null) {
+            supportFragmentManager.beginTransaction()
+                    .add(android.R.id.content, ListPreferenceFragment())
+                    .addToBackStack(backstackTag)
+                    .commit()
         }
-        return super.onOptionsItemSelected(item)
     }
 
-    /**
-     * Set up the [android.app.ActionBar], if the API is available.
-     */
-    private fun setupActionBar() {
-        val actionBar = supportActionBar
-        actionBar?.setDisplayHomeAsUpEnabled(true)
-    }
+    override fun onPreferenceStartFragment(caller: PreferenceFragmentCompat, pref: Preference): Boolean {
+        val args = pref.extras
+        val fragment = supportFragmentManager.fragmentFactory.instantiate(
+                classLoader,
+                pref.fragment)
+        fragment.arguments = args
+        fragment.setTargetFragment(caller, 0)
 
-    /**
-     * {@inheritDoc}
-     */
-    override fun onIsMultiPane(): Boolean {
-        return isXLargeTablet(this)
-    }
-
-    /**
-     * {@inheritDoc}
-     */
-    @TargetApi(Build.VERSION_CODES.HONEYCOMB)
-    override fun onBuildHeaders(target: List<PreferenceActivity.Header>) {
-        loadHeadersFromResource(R.xml.pref_headers, target)
-    }
-
-    /**
-     * This method stops fragment injection in malicious applications.
-     * Make sure to deny any unknown fragments here.
-     */
-    override fun isValidFragment(fragmentName: String): Boolean {
-        return (PreferenceFragment::class.java.name == fragmentName
-                || GeneralPreferenceFragment::class.java.name == fragmentName
-                || AboutPreferenceFragment::class.java.name == fragmentName)
+        supportFragmentManager.beginTransaction()
+                .replace(android.R.id.content, fragment)
+                .addToBackStack(null)
+                .commit()
+        return true
     }
 
     /**
      * This fragment shows general preferences only. It is used when the
      * activity is showing a two-pane settings UI.
      */
-    @TargetApi(Build.VERSION_CODES.HONEYCOMB)
-    class GeneralPreferenceFragment : PreferenceFragment() {
-        override fun onCreate(savedInstanceState: Bundle?) {
-            super.onCreate(savedInstanceState)
+
+    class ListPreferenceFragment : PreferenceFragmentCompat() {
+        override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
+            setPreferencesFromResource(R.xml.pref_headers, rootKey)
+            setHasOptionsMenu(true)
+        }
+    }
+
+    class GeneralPreferenceFragment : PreferenceFragmentCompat() {
+
+        override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
             addPreferencesFromResource(R.xml.pref_general)
             setHasOptionsMenu(true)
 
-            // Bind the summaries of EditText/List/Dialog/Ringtone preferences
-            // to their values. When their values change, their summaries are
-            // updated to reflect the new value, per the Android Design
-            // guidelines.
             bindPreferenceSummaryToValue(findPreference("ip"), 2)
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(requireContext())) {
+                val overlayPreference: Preference? = findPreference("overlaySwitch")
+                overlayPreference?.onPreferenceChangeListener = Preference.OnPreferenceChangeListener { _, newValue ->
+                    if (newValue.toString().toBoolean()) {
+                        val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${requireContext().packageName}"))
+                        startActivityForResult(intent, DRAW_OVERLAYS_PERMISSION_REQUEST_CODE)
+                    }
+                    true
+                }
+            }
+        }
+
+
+        override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+            super.onActivityResult(requestCode, resultCode, data)
+
+            val overlayPreference: SwitchPreference? = findPreference("overlaySwitch")
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(requireContext())) {
+                overlayPreference?.isChecked = false
+            }
         }
 
         override fun onOptionsItemSelected(item: MenuItem): Boolean {
-            val id = item.itemId
-            if (id == android.R.id.home) {
-                startActivity(Intent(activity, SettingsActivity::class.java))
+            if (item.itemId == android.R.id.home) {
+                activity?.supportFragmentManager?.popBackStack()
+                return true
+            }
+            return super.onOptionsItemSelected(item)
+        }
+    }
+
+    class NotificationPreferenceFragment : PreferenceFragmentCompat() {
+        override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
+            addPreferencesFromResource(R.xml.pref_notification)
+            setHasOptionsMenu(true)
+        }
+
+        override fun onOptionsItemSelected(item: MenuItem): Boolean {
+            if (item.itemId == android.R.id.home) {
+                activity?.supportFragmentManager?.popBackStack()
+                return true
+            }
+
+            return super.onOptionsItemSelected(item)
+        }
+/*
+        override fun onPreferenceTreeClick(preference: Preference): Boolean {
+            return if (preference.key == KEY_RINGTONE_PREFERENCE) {
+                val intent = Intent(RingtoneManager.ACTION_RINGTONE_PICKER)
+                intent.putExtra(RingtoneManager.EXTRA_RINGTONE_TYPE, RingtoneManager.TYPE_NOTIFICATION)
+                intent.putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT, true)
+                intent.putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_SILENT, true)
+                intent.putExtra(RingtoneManager.EXTRA_RINGTONE_DEFAULT_URI, Settings.System.DEFAULT_NOTIFICATION_URI)
+                val existingValue: String = getRingtonePreferenceValue() // TODO
+                if (existingValue != null) {
+                    if (existingValue.length == 0) {
+                        // Select "Silent"
+                        intent.putExtra(RingtoneManager.EXTRA_RINGTONE_EXISTING_URI, null as Uri?)
+                    } else {
+                        intent.putExtra(RingtoneManager.EXTRA_RINGTONE_EXISTING_URI, Uri.parse(existingValue))
+                    }
+                } else {
+                    // No ringtone has been selected, set to the default
+                    intent.putExtra(RingtoneManager.EXTRA_RINGTONE_EXISTING_URI, Settings.System.DEFAULT_NOTIFICATION_URI)
+                }
+                startActivityForResult(intent, REQUEST_CODE_ALERT_RINGTONE)
+                true
+            } else {
+                super.onPreferenceTreeClick(preference)
+            }
+        }
+
+        override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+            if (requestCode == REQUEST_CODE_ALERT_RINGTONE && data != null) {
+                val ringtone = data.getParcelableExtra<Uri>(RingtoneManager.EXTRA_RINGTONE_PICKED_URI)
+                if (ringtone != null) {
+                    setRingtonPreferenceValue(ringtone.toString()) // TODO
+                } else {
+                    // "Silent" was selected
+                    setRingtonPreferenceValue("") // TODO
+                }
+            } else {
+                super.onActivityResult(requestCode, resultCode, data)
+            }
+        }*/
+    }
+
+    class DataSyncPreferenceFragment : PreferenceFragmentCompat() {
+        override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
+            addPreferencesFromResource(R.xml.pref_data_sync)
+            setHasOptionsMenu(true)
+        }
+
+        override fun onOptionsItemSelected(item: MenuItem): Boolean {
+            if (item.itemId == android.R.id.home) {
+                activity?.supportFragmentManager?.popBackStack()
                 return true
             }
 
@@ -136,19 +197,17 @@ class SettingsActivity : AppCompatPreferenceActivity() {
         }
     }
 
-    @TargetApi(Build.VERSION_CODES.HONEYCOMB)
-    class AboutPreferenceFragment : PreferenceFragment() {
-        override fun onCreate(savedInstanceState: Bundle?) {
-            super.onCreate(savedInstanceState)
+    class AboutPreferenceFragment : PreferenceFragmentCompat() {
+        override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
             addPreferencesFromResource(R.xml.pref_about)
             setHasOptionsMenu(true)
 
             bindPreferenceSummaryToValue(findPreference(VERSION_NAME_PREFERENCE_KEY), 2)
             bindPreferenceSummaryToValue(findPreference(VERSION_CODE_PREFERENCE_KEY), 1)
 
-            val licensePreference = findPreference("license")
+            val licensePreference: Preference? = findPreference("license")
 
-            licensePreference.onPreferenceClickListener = Preference.OnPreferenceClickListener {
+            licensePreference?.onPreferenceClickListener = Preference.OnPreferenceClickListener {
                 val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.gnu.org/licenses/gpl-3.0.en.html"))
                 startActivity(intent)
 
@@ -159,9 +218,8 @@ class SettingsActivity : AppCompatPreferenceActivity() {
         }
 
         override fun onOptionsItemSelected(item: MenuItem): Boolean {
-            val id = item.itemId
-            if (id == android.R.id.home) {
-                startActivity(Intent(activity, SettingsActivity::class.java))
+            if (item.itemId == android.R.id.home) {
+                activity?.supportFragmentManager?.popBackStack()
                 return true
             }
 
@@ -170,6 +228,8 @@ class SettingsActivity : AppCompatPreferenceActivity() {
     }
 
     companion object {
+
+        private const val DRAW_OVERLAYS_PERMISSION_REQUEST_CODE = 666
 
         /**
          * A preference value change listener that updates the preference's summary
@@ -220,14 +280,6 @@ class SettingsActivity : AppCompatPreferenceActivity() {
         }
 
         /**
-         * Helper method to determine if the device has an extra-large screen. For
-         * example, 10" tablets are extra-large.
-         */
-        private fun isXLargeTablet(context: Context): Boolean {
-            return context.resources.configuration.screenLayout and Configuration.SCREENLAYOUT_SIZE_MASK >= Configuration.SCREENLAYOUT_SIZE_XLARGE
-        }
-
-        /**
          * Binds a preference's summary to its value. More specifically, when the
          * preference's value is changed, its summary (line of text below the
          * preference title) is updated to reflect the value. The summary is also
@@ -236,28 +288,33 @@ class SettingsActivity : AppCompatPreferenceActivity() {
          *
          * @see .sBindPreferenceSummaryToValueListener
          */
-        private fun bindPreferenceSummaryToValue(preference: Preference, type: Int = 2) {
+        private fun bindPreferenceSummaryToValue(preference: Preference?, type: Int = 2) {
             // Set the listener to watch for value changes.
-            preference.onPreferenceChangeListener = sBindPreferenceSummaryToValueListener
+            preference?.onPreferenceChangeListener = sBindPreferenceSummaryToValueListener
 
             // Trigger the listener immediately with the preference's
             // current value.
-            val preferences = PreferenceManager.getDefaultSharedPreferences(preference.context)
+            val preferences = PreferenceManager.getDefaultSharedPreferences(preference?.context)
 
             var stringValue: String? = ""
             when (type) {
                 1 ->
                     //integer
-                    stringValue = preferences.getInt(preference.key, 0).toString()
+                    stringValue = preferences.getInt(preference?.key, 0).toString()
                 2 ->
                     //string
-                    stringValue = preferences.getString(preference.key, "")
+                    stringValue = preferences.getString(preference?.key, "")
                 3 ->
                     //boolean
-                    stringValue = java.lang.Boolean.toString(preferences.getBoolean(preference.key, false))
+                    stringValue = java.lang.Boolean.toString(preferences.getBoolean(preference?.key, false))
             }
 
             sBindPreferenceSummaryToValueListener.onPreferenceChange(preference, stringValue)
         }
+    }
+
+    override fun onBackPressed() {
+        if (supportFragmentManager.backStackEntryCount == 1) finish()
+        else super.onBackPressed()
     }
 }
