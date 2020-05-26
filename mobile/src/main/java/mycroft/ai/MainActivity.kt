@@ -20,21 +20,6 @@
 
 package mycroft.ai
 
-import android.app.Activity
-import android.content.*
-import android.content.pm.PackageManager
-import android.net.Uri
-import android.os.Build
-import android.os.Bundle
-import android.os.Handler
-import android.provider.Settings
-import android.speech.RecognizerIntent
-import android.util.Log
-import android.view.Menu
-import android.view.MenuItem
-import android.view.View
-import androidx.appcompat.app.AppCompatActivity
-import androidx.preference.PreferenceManager
 import com.crashlytics.android.Crashlytics
 import io.fabric.sdk.android.Fabric
 import kotlinx.android.synthetic.main.activity_main.*
@@ -49,6 +34,27 @@ import mycroft.ai.shared.wear.Constants.MycroftSharedConstants.MYCROFT_WEAR_REQU
 import mycroft.ai.shared.wear.Constants.MycroftSharedConstants.MYCROFT_WEAR_REQUEST_KEY_NAME
 import mycroft.ai.shared.wear.Constants.MycroftSharedConstants.MYCROFT_WEAR_REQUEST_MESSAGE
 import mycroft.ai.utils.NetworkUtil
+
+import android.Manifest
+import android.content.*
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
+import android.os.Bundle
+import android.os.Handler
+import android.provider.Settings
+import android.speech.RecognitionListener
+import android.speech.RecognizerIntent
+import android.speech.SpeechRecognizer
+import android.util.Log
+import android.view.Menu
+import android.view.MenuItem
+import android.view.View
+import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
+import androidx.preference.PreferenceManager
+
 import org.java_websocket.client.WebSocketClient
 import org.java_websocket.exceptions.WebsocketNotConnectedException
 import org.java_websocket.handshake.ServerHandshake
@@ -56,19 +62,22 @@ import java.net.URI
 import java.net.URISyntaxException
 import java.util.*
 
-class MainActivity : AppCompatActivity() {
+class MainActivity : AppCompatActivity(), RecognitionListener {
     private val logTag = "Mycroft"
     private val utterances = mutableListOf<Utterance>()
-    private val reqCodeSpeechInput = 100
+    private val reqCodeSpeechInput = 101
+
     private var maximumRetries = 1
     private var currentItemPosition = -1
-
-
     private var isNetworkChangeReceiverRegistered = false
     private var isWearBroadcastRevieverRegistered = false
     private var launchedFromWidget = false
     private var autoPromptForSpeech = false
     private var backgroundService = true
+    private var speech: SpeechRecognizer? = null
+
+    // API Bug Fix see "onResults"
+    private var singleResult = true
 
     private lateinit var ttsManager: TTSManager
     private lateinit var mycroftAdapter: MycroftAdapter
@@ -81,15 +90,20 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        setupPermissions()
 
         Fabric.with(this, Crashlytics())
         setContentView(R.layout.activity_main)
         setSupportActionBar(toolbar)
+        registerForContextMenu(cardList)
 
         sharedPref = PreferenceManager.getDefaultSharedPreferences(this)
-
         ttsManager = TTSManager(this)
         mycroftAdapter = MycroftAdapter(utterances, applicationContext, menuInflater)
+
+        speech = SpeechRecognizer.createSpeechRecognizer(this)
+        speech?.setRecognitionListener(this)
+
         mycroftAdapter.setOnLongItemClickListener(object: MycroftAdapter.OnLongItemClickListener {
             override fun itemLongClicked(v: View, position: Int) {
                 currentItemPosition = position
@@ -115,7 +129,6 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        micButton.setOnClickListener { promptSpeechInput() }
         sendUtterance.setOnClickListener {
             val utterance = utteranceInput.text.toString()
             if (utterance != "") {
@@ -134,8 +147,6 @@ class MainActivity : AppCompatActivity() {
             if (!isChecked) ttsManager.initQueue("")
         }
 
-        registerForContextMenu(cardList)
-
         val llm = androidx.recyclerview.widget.LinearLayoutManager(this)
         llm.stackFromEnd = true
         llm.orientation = androidx.recyclerview.widget.LinearLayoutManager.VERTICAL
@@ -145,8 +156,26 @@ class MainActivity : AppCompatActivity() {
             adapter = mycroftAdapter
         }
 
+        micButton.setOnClickListener { promptSpeechInput() }
+
         // start the discovery activity (testing only)
         // startActivity(new Intent(this, DiscoveryActivity.class));
+    }
+
+    private fun setupPermissions() {
+        val permission = ContextCompat.checkSelfPermission(this,  Manifest.permission.RECORD_AUDIO)
+        if (permission != PackageManager.PERMISSION_GRANTED)
+            ActivityCompat.requestPermissions(this,
+                    arrayOf(Manifest.permission.RECORD_AUDIO),
+                    reqCodeSpeechInput)
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
+        when (requestCode) {
+            reqCodeSpeechInput -> {
+                if (grantResults.isEmpty() || grantResults[0] != PackageManager.PERMISSION_GRANTED) finish()
+            }
+        }
     }
 
     public override fun onStart() {
@@ -158,10 +187,9 @@ class MainActivity : AppCompatActivity() {
 
     public override fun onResume() {
         super.onResume()
-        backgroundService = true
         loadPreferences()
-        //voxswitch.isChecked = sharedPref.getBoolean("appReaderSwitch", true)
 
+        backgroundService = true
         stopBackgroundService()
     }
 
@@ -172,6 +200,8 @@ class MainActivity : AppCompatActivity() {
 
     override fun onPause() {
         unregisterReceivers()
+        if (speech != null) speech!!.destroy()
+
         super.onPause()
     }
 
@@ -179,8 +209,8 @@ class MainActivity : AppCompatActivity() {
         if (launchedFromWidget) {
             autoPromptForSpeech = true
         }
-
         if (backgroundService) startBackgroundService()
+
         super.onStop()
     }
 
@@ -400,9 +430,7 @@ class MainActivity : AppCompatActivity() {
                 // Actions to do after 1 seconds
                 try {
                     webSocketClient!!.send(json)
-                    Log.d(logTag, "test2")
                     addData(Utterance(msg, UtteranceFrom.USER))
-                    Log.d(logTag, "test1")
                 } catch (exception: WebsocketNotConnectedException) {
                     showToast(resources.getString(R.string.websocket_closed))
                 }
@@ -418,13 +446,11 @@ class MainActivity : AppCompatActivity() {
      * Receive MycroftCore WebInstance
      */
     private fun addData(mycroftUtterance: Utterance) {
-        Log.w(logTag, mycroftUtterance.from.toString() + " " + sharedPref.getBoolean("repeatSwitch", false).toString())
         utterances.add(mycroftUtterance)
         mycroftAdapter.notifyItemInserted(utterances.size - 1)
 
         // TURN OFF SELF SPOKEN SETTING
         if (voxswitch.isChecked && (mycroftUtterance.from !== UtteranceFrom.USER || sharedPref.getBoolean("repeatSwitch", false))) {
-
             ttsManager.addQueue(mycroftUtterance.utterance)
         }
         cardList.smoothScrollToPosition(mycroftAdapter.itemCount - 1)
@@ -436,11 +462,26 @@ class MainActivity : AppCompatActivity() {
      * Showing google speech input dialog
      */
     private fun promptSpeechInput() {
+
         if (webSocketClient != null && webSocketClient!!.connection.isOpen) {
             // Set micImg to green
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) micButton.setImageDrawable(resources.getDrawable(R.drawable.ic_mycroft_green, applicationContext.theme))
             else micButton.setImageDrawable(resources.getDrawable(R.drawable.ic_mycroft_green))
 
+            // Create Listening Intent
+            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+            intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                    RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
+            intent.putExtra(RecognizerIntent.EXTRA_PROMPT,
+                    getString(R.string.speech_prompt))
+            //intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "en")
+            intent.putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE,
+                    application.packageName)
+
+            // Start Listening
+            speech?.startListening(intent)
+            /*
             val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
             intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL,
                     RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
@@ -451,31 +492,71 @@ class MainActivity : AppCompatActivity() {
                 startActivityForResult(intent, reqCodeSpeechInput)
             } catch (a: ActivityNotFoundException) {
                 showToast(getString(R.string.speech_not_supported))
-            }
+            }*/
         } else showToast(resources.getString(R.string.websocket_closed))
+    }
+
+    // Speech Recognizer Class Handling
+    override fun onReadyForSpeech(params: Bundle?) {}
+
+    override fun onRmsChanged(rmsdB: Float) {}
+
+    override fun onBufferReceived(buffer: ByteArray?) {}
+
+    override fun onPartialResults(partialResults: Bundle?) {}
+
+    override fun onEvent(eventType: Int, params: Bundle?) {}
+
+    override fun onBeginningOfSpeech() {}
+
+    override fun onEndOfSpeech() {}
+
+    // Speech Recognizer Error Handling
+    override fun onError(errorCode: Int) {
+        val errorMessage = getErrorText(errorCode)
+        showToast("FAILED $errorMessage")
+    }
+
+    private fun getErrorText(errorCode: Int): String {
+        return when (errorCode) {
+            SpeechRecognizer.ERROR_AUDIO -> "Audio recording error"
+            SpeechRecognizer.ERROR_CLIENT -> "Client side error"
+            SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "Insufficient permissions"
+            SpeechRecognizer.ERROR_NETWORK -> "Network error"
+            SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "Network timeout"
+            SpeechRecognizer.ERROR_NO_MATCH -> "No match"
+            SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "RecognitionService busy"
+            SpeechRecognizer.ERROR_SERVER -> "error from server"
+            SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "No speech input"
+            else -> "Didn't understand, please try again."
+        }
     }
 
     /**
      * Receiving speech input
      */
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-
+    override fun onResults(results: Bundle?) {
+        /** Known API Bug onResults is called twice on some devices and APIs
+         *  https://issuetracker.google.com/issues/152628934
+         *  local Boolean for a temp fix
+        */
+        Log.d(logTag, "SR Test0")
         // Set micImg back to blue
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) micButton.setImageDrawable(resources.getDrawable(R.drawable.ic_mycroft, applicationContext.theme))
-        else micButton.setImageDrawable(resources.getDrawable(R.drawable.ic_mycroft))
 
-        when (requestCode) {
-            reqCodeSpeechInput -> {
-                if (resultCode == Activity.RESULT_OK && null != data) {
-
-                    val result = data
-                            .getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
-
-                    sendMessage(result[0])
-                }
-            }
+        // check local boolean fix
+        if (singleResult) {
+            val result = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+            Log.d(logTag, "SR Test1 " + result!![0])
+            sendMessage(result!![0])
+            singleResult=false
         }
+
+        // reset local boolean & change micButton color back to indicate change
+        Handler().postDelayed(Runnable {
+            singleResult = true
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) micButton.setImageDrawable(resources.getDrawable(R.drawable.ic_mycroft, applicationContext.theme))
+            else micButton.setImageDrawable(resources.getDrawable(R.drawable.ic_mycroft))
+        }, 100)
     }
 
     /**
