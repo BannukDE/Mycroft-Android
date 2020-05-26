@@ -1,43 +1,51 @@
-package mycroft.ai
+package mycroft.ai.services
 
-import android.app.*
-//import android.app.NotificationManager
-//import android.app.NotificationChannel
+import mycroft.ai.R
+import mycroft.ai.MainActivity
+import mycroft.ai.FloatingWidgetView
+import android.app.Service
+import android.app.Notification
+import android.app.NotificationManager
+import android.app.NotificationChannel
+import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.os.Build
 import android.os.IBinder
-import android.os.PowerManager
-import androidx.annotation.Nullable
-import android.util.Log
 import android.view.WindowManager
 
+import androidx.annotation.Nullable
+import androidx.preference.PreferenceManager
 
-class FloatingWidgetService : Service() {
 
-    private val logTag = "MycroftFloatWidget"
+class BackgroundService : Service() {
 
-    private var isServiceStarted = false
-    private var wakeLock: PowerManager.WakeLock? = null
+    private var activityBackground = false
 
     private lateinit var windowManager: WindowManager
     private lateinit var floatingWidgetView: FloatingWidgetView
+    private lateinit var sharedPref: SharedPreferences
 
     override fun onCreate() {
         super.onCreate()
+        sharedPref = PreferenceManager.getDefaultSharedPreferences(this)
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
-        val notification = createNotification()
-        startForeground(1, notification)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         super.onStartCommand(intent, flags, startId)
+        val notification = createNotification()
+        startForeground(1, notification)
 
-        // creates the floatingWidgetView
-        if (!::floatingWidgetView.isInitialized) {
-            Log.i(logTag, "Service starting")
-            floatingWidgetView = FloatingWidgetView(this)
-        }
+        if (intent != null) activityBackground = intent.getBooleanExtra("activity_background", true)
+        if (activityBackground && sharedPref.getBoolean("overlaySwitch", false)) {
+
+            // creates the floatingWidgetView
+            if (!::floatingWidgetView.isInitialized) {
+                floatingWidgetView = FloatingWidgetView(this)
+            }
+        } else stopSelf()
 
         return START_REDELIVER_INTENT
     }
@@ -45,7 +53,6 @@ class FloatingWidgetService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         if(::windowManager.isInitialized && ::floatingWidgetView.isInitialized) windowManager.removeView(floatingWidgetView)
-        Log.i(logTag, "Service stopped")
     }
 
     @Nullable

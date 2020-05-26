@@ -28,7 +28,6 @@ import android.os.Bundle
 import android.preference.RingtonePreference
 import android.provider.Settings
 import android.text.TextUtils
-import android.util.Log
 import android.view.MenuItem
 import androidx.appcompat.app.AppCompatActivity
 import androidx.fragment.app.FragmentManager
@@ -57,6 +56,10 @@ class SettingsActivity : AppCompatActivity(), PreferenceFragmentCompat.OnPrefere
                     .addToBackStack(backstackTag)
                     .commit()
         }
+    }
+
+    public override fun onResume() {
+        super.onResume()
     }
 
     override fun onPreferenceStartFragment(caller: PreferenceFragmentCompat, pref: Preference): Boolean {

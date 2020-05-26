@@ -27,7 +27,6 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
-import androidx.preference.PreferenceManager
 import android.provider.Settings
 import android.speech.RecognizerIntent
 import android.util.Log
@@ -35,6 +34,7 @@ import android.view.Menu
 import android.view.MenuItem
 import android.view.View
 import androidx.appcompat.app.AppCompatActivity
+import androidx.preference.PreferenceManager
 import com.crashlytics.android.Crashlytics
 import io.fabric.sdk.android.Fabric
 import kotlinx.android.synthetic.main.activity_main.*
@@ -43,6 +43,7 @@ import mycroft.ai.Constants.MycroftMobileConstants.VERSION_CODE_PREFERENCE_KEY
 import mycroft.ai.Constants.MycroftMobileConstants.VERSION_NAME_PREFERENCE_KEY
 import mycroft.ai.adapters.MycroftAdapter
 import mycroft.ai.receivers.NetworkChangeReceiver
+import mycroft.ai.services.BackgroundService
 import mycroft.ai.shared.utilities.GuiUtilities
 import mycroft.ai.shared.wear.Constants.MycroftSharedConstants.MYCROFT_WEAR_REQUEST
 import mycroft.ai.shared.wear.Constants.MycroftSharedConstants.MYCROFT_WEAR_REQUEST_KEY_NAME
@@ -67,6 +68,7 @@ class MainActivity : AppCompatActivity() {
     private var isWearBroadcastRevieverRegistered = false
     private var launchedFromWidget = false
     private var autoPromptForSpeech = false
+    private var backgroundService = true
 
     private lateinit var ttsManager: TTSManager
     private lateinit var mycroftAdapter: MycroftAdapter
@@ -84,7 +86,7 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
         setSupportActionBar(toolbar)
 
-        loadPreferences()
+        sharedPref = PreferenceManager.getDefaultSharedPreferences(this)
 
         ttsManager = TTSManager(this)
         mycroftAdapter = MycroftAdapter(utterances, applicationContext, menuInflater)
@@ -156,11 +158,11 @@ class MainActivity : AppCompatActivity() {
 
     public override fun onResume() {
         super.onResume()
+        backgroundService = true
+        loadPreferences()
+        //voxswitch.isChecked = sharedPref.getBoolean("appReaderSwitch", true)
 
-        voxswitch.isChecked = sharedPref.getBoolean("appReaderSwitch", true)
-
-        if (serviceRunning) stopFloatingWidget()
-        serviceRunning = sharedPref.getBoolean("overlaySwitch", false)
+        stopBackgroundService()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -169,29 +171,22 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onPause() {
-        super.onPause()
         unregisterReceivers()
+        super.onPause()
     }
 
     public override fun onStop() {
-        super.onStop()
-
         if (launchedFromWidget) {
             autoPromptForSpeech = true
         }
 
-        if (sharedPref.getBoolean("overlaySwitch", false)) startFloatingWidget()
+        if (backgroundService) startBackgroundService()
+        super.onStop()
     }
 
     public override fun onDestroy() {
         ttsManager.shutDown()
-        isNetworkChangeReceiverRegistered = false
-        isWearBroadcastRevieverRegistered = false
         super.onDestroy()
-    }
-
-    companion object {
-        var serviceRunning = false
     }
 
     /**
@@ -213,6 +208,7 @@ class MainActivity : AppCompatActivity() {
         var consumed = false
         when (item.itemId) {
             R.id.action_settings -> {
+                backgroundService = false
                 startActivity(Intent(this, SettingsActivity::class.java))
                 consumed = true
             }
@@ -350,6 +346,9 @@ class MainActivity : AppCompatActivity() {
         if (uri != null) {
             webSocketClient = object : WebSocketClient(uri) {
                 override fun onOpen(serverHandshake: ServerHandshake) {
+                    // Set micImg to blue
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) micButton.setImageDrawable(resources.getDrawable(R.drawable.ic_mycroft, applicationContext.theme))
+                    else micButton.setImageDrawable(resources.getDrawable(R.drawable.ic_mycroft))
                     Log.i("Websocket", "Opened")
                 }
 
@@ -363,11 +362,17 @@ class MainActivity : AppCompatActivity() {
                 }
 
                 override fun onClose(i: Int, s: String, b: Boolean) {
+                    // Set micImg to red
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) micButton.setImageDrawable(resources.getDrawable(R.drawable.ic_mycroft_red, applicationContext.theme))
+                    else micButton.setImageDrawable(resources.getDrawable(R.drawable.ic_mycroft_red))
                     Log.i("Websocket", "Closed $s")
 
                 }
 
                 override fun onError(e: Exception) {
+                    // Set micImg to red
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) micButton.setImageDrawable(resources.getDrawable(R.drawable.ic_mycroft_red, applicationContext.theme))
+                    else micButton.setImageDrawable(resources.getDrawable(R.drawable.ic_mycroft_red))
                     Log.i("Websocket", "Error " + e.message)
                 }
             }
@@ -390,13 +395,14 @@ class MainActivity : AppCompatActivity() {
                     connectWebSocket()
                 }
             }
-
             val handler = Handler()
             handler.postDelayed({
                 // Actions to do after 1 seconds
                 try {
                     webSocketClient!!.send(json)
+                    Log.d(logTag, "test2")
                     addData(Utterance(msg, UtteranceFrom.USER))
+                    Log.d(logTag, "test1")
                 } catch (exception: WebsocketNotConnectedException) {
                     showToast(resources.getString(R.string.websocket_closed))
                 }
@@ -430,18 +436,23 @@ class MainActivity : AppCompatActivity() {
      * Showing google speech input dialog
      */
     private fun promptSpeechInput() {
-        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
-        intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL,
-                RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-        intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
-        intent.putExtra(RecognizerIntent.EXTRA_PROMPT,
-                getString(R.string.speech_prompt))
-        try {
-            startActivityForResult(intent, reqCodeSpeechInput)
-        } catch (a: ActivityNotFoundException) {
-            showToast(getString(R.string.speech_not_supported))
-        }
+        if (webSocketClient != null && webSocketClient!!.connection.isOpen) {
+            // Set micImg to green
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) micButton.setImageDrawable(resources.getDrawable(R.drawable.ic_mycroft_green, applicationContext.theme))
+            else micButton.setImageDrawable(resources.getDrawable(R.drawable.ic_mycroft_green))
 
+            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+            intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                    RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
+            intent.putExtra(RecognizerIntent.EXTRA_PROMPT,
+                    getString(R.string.speech_prompt))
+            try {
+                startActivityForResult(intent, reqCodeSpeechInput)
+            } catch (a: ActivityNotFoundException) {
+                showToast(getString(R.string.speech_not_supported))
+            }
+        } else showToast(resources.getString(R.string.websocket_closed))
     }
 
     /**
@@ -449,6 +460,10 @@ class MainActivity : AppCompatActivity() {
      */
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+
+        // Set micImg back to blue
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) micButton.setImageDrawable(resources.getDrawable(R.drawable.ic_mycroft, applicationContext.theme))
+        else micButton.setImageDrawable(resources.getDrawable(R.drawable.ic_mycroft))
 
         when (requestCode) {
             reqCodeSpeechInput -> {
@@ -491,7 +506,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun loadPreferences() {
-        sharedPref = PreferenceManager.getDefaultSharedPreferences(this)
 
         // get mycroft-core ip address
         wsip = sharedPref.getString("ip", "")?: ""
@@ -499,6 +513,9 @@ class MainActivity : AppCompatActivity() {
             // eep, show the settings intent!
             startActivity(Intent(this, SettingsActivity::class.java))
         } else if (webSocketClient == null || webSocketClient!!.connection.isClosed) {
+            connectWebSocket()
+        } else if (webSocketClient != null &&   webSocketClient!!.connection.isOpen) {
+            webSocketClient!!.close()
             connectWebSocket()
         }
 
@@ -546,15 +563,23 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun startFloatingWidget() {
+    private fun startBackgroundService() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(this)) {
-            serviceRunning = true
-            startService(Intent(this@MainActivity, FloatingWidgetService::class.java))
+            val widgetIntent = Intent(this@MainActivity, BackgroundService::class.java).putExtra("activity_background", true)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(widgetIntent)
+            } else {
+                startService(widgetIntent)
+            }
         }
     }
 
-    private fun stopFloatingWidget() {
-        serviceRunning = false
-        stopService(Intent(this@MainActivity, FloatingWidgetService::class.java))
+    private fun stopBackgroundService() {
+        val widgetIntent = Intent(this@MainActivity, BackgroundService::class.java).putExtra("activity_background", false)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(widgetIntent)
+        } else {
+            startService(widgetIntent)
+        }
     }
 }

@@ -44,40 +44,6 @@ task clean(type: Delete) {
     delete rootProject.buildDir
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 String getVersionName() {
     String versionName = "${ext.versionMajor}.${ext.versionMinor}.${ext.versionPatch}"
     if (ext.versionClassifier != null && !ext.versionClassifier.isEmpty()) {

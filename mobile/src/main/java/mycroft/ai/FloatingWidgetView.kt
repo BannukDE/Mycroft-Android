@@ -4,7 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.PixelFormat
 import android.os.Build
-import android.preference.PreferenceManager
+import androidx.preference.PreferenceManager
 import androidx.constraintlayout.widget.ConstraintLayout
 import android.util.DisplayMetrics
 import android.view.WindowManager
@@ -12,6 +12,7 @@ import android.view.View
 import android.view.ViewTreeObserver
 import android.view.MotionEvent
 import kotlinx.android.synthetic.main.overlay_layout.view.floatingIcon
+import mycroft.ai.services.BackgroundService
 
 
 class FloatingWidgetView(context: Context) : ConstraintLayout(context), View.OnTouchListener {
@@ -93,7 +94,7 @@ class FloatingWidgetView(context: Context) : ConstraintLayout(context), View.OnT
                         // Set overlay Settings off
                         editor.putBoolean("overlaySwitch", false)
                         editor.apply()
-                        context.stopService(Intent(context, FloatingWidgetService::class.java))
+                        context.stopService(Intent(context, BackgroundService::class.java))
                     }
                 }
                 else {
